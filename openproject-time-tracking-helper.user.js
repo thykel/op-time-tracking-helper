@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         OpenProject – Meeting Time Suggestions
 // @namespace    https://community.openproject.org
-// @version      0.0.1
+// @version      0.0.5
 // @description  Annotates the time tracking calendar with meetings you attended (read-only).
-// @author       you
+// @author       thykel
 // @match        https://community.openproject.org/my/time-tracking*
 // @grant        none
 // ==/UserScript==
@@ -125,10 +125,6 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Attendee + de-dupe logic
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // Styles
   // ─────────────────────────────────────────────────────────────────────────────
   function injectStyles() {
@@ -148,7 +144,7 @@
         font-size: 10px;
         font-weight: 500;
         line-height: 1.35;
-        cursor: default;
+        cursor: pointer;
         user-select: none;
         overflow: hidden;
         border: 1px solid #93c5fd;
@@ -192,6 +188,30 @@
         flex-shrink: 0;
       }
       @keyframes op-ms-spin { to { transform: rotate(360deg); } }
+
+      /* ── click popover ── */
+      .op-ms-popover {
+        position: fixed;
+        z-index: 99999;
+        background: #fff;
+        border: 1px solid #bfdbfe;
+        border-radius: 7px;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.13);
+        padding: 10px 13px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #1e293b;
+        min-width: 180px;
+        max-width: 280px;
+        pointer-events: none;
+      }
+      .op-ms-popover__title {
+        font-weight: 700;
+        font-size: 13px;
+        margin-bottom: 4px;
+        color: #1e40af;
+      }
+      .op-ms-popover__row { color: #475569; }
     `;
     document.head.appendChild(el);
   }
@@ -200,6 +220,7 @@
   // Chip injection
   // ─────────────────────────────────────────────────────────────────────────────
   function clearChips() {
+    hidePopover();
     document.querySelectorAll('.op-ms-chip').forEach(el => el.remove());
   }
 
@@ -279,9 +300,47 @@
         '<span class="op-ms-chip__name">' + esc(title) + '</span>' +
         '<span class="op-ms-chip__dur">'  + fmtDuration(durMins) + '</span>';
 
+      chip.dataset.opMsChip = '1';
+      chip._opMsTooltip = tooltipParts;
+
       eventsLayer.appendChild(chip);
     }
   }
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Click popover
+  // ─────────────────────────────────────────────────────────────────────────────
+  function showPopover(chip, tooltipParts) {
+    hidePopover();
+
+    const pop = document.createElement('div');
+    pop.id        = 'op-ms-popover';
+    pop.className = 'op-ms-popover';
+
+    const [title, ...rows] = tooltipParts;
+    pop.innerHTML =
+      '<div class="op-ms-popover__title">' + esc(title) + '</div>' +
+      rows.map(r => '<div class="op-ms-popover__row">' + esc(r) + '</div>').join('');
+
+    document.body.appendChild(pop);
+
+    // Position: prefer below-right of chip, flip if off-screen
+    const rect = chip.getBoundingClientRect();
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    let top  = rect.bottom + 4;
+    let left = rect.left;
+    if (top + ph  > window.innerHeight) top  = rect.top - ph - 4;
+    if (left + pw > window.innerWidth)  left = rect.right - pw;
+    pop.style.top  = top  + 'px';
+    pop.style.left = left + 'px';
+
+    // Dismiss on next click anywhere
+    setTimeout(() => document.addEventListener('click', hidePopover, { once: true }), 0);
+  }
+
+  function hidePopover() {
+    document.getElementById('op-ms-popover')?.remove();
+  }
+
   function showLoading() {
     if (document.getElementById('op-ms-loading')) return;
     // Find the page title — OpenProject renders it as an h2 or h1 with the
@@ -360,6 +419,27 @@
     injectStyles();
     scheduleRender(900); // give FullCalendar time to render its grid
   }
+
+  // Intercept mousedown (not click) — FullCalendar registers its slot handler
+  // on mousedown, so by the time 'click' fires it has already acted.
+  document.addEventListener('mousedown', e => {
+    const chip = e.target.closest('[data-op-ms-chip]');
+    if (!chip) return;
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.preventDefault();
+  }, { capture: true });
+
+  // Separate click listener purely to show the popover (safe now that
+  // mousedown has already blocked FullCalendar).
+  document.addEventListener('click', e => {
+    const chip = e.target.closest('[data-op-ms-chip]');
+    if (!chip) return;
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.preventDefault();
+    showPopover(chip, chip._opMsTooltip ?? []);
+  }, { capture: true });
 
   // Turbo Drive navigations (includes week-navigation arrow clicks)
   document.addEventListener('turbo:load',       init);
