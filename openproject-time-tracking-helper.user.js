@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenProject – Meeting Time Suggestions
 // @namespace    https://community.openproject.org
-// @version      0.0.5
+// @version      0.0.6
 // @description  Annotates the time tracking calendar with meetings you attended (read-only).
 // @author       thykel
 // @match        https://community.openproject.org/my/time-tracking*
@@ -306,6 +306,7 @@
       eventsLayer.appendChild(chip);
     }
   }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Click popover
   // ─────────────────────────────────────────────────────────────────────────────
@@ -343,19 +344,23 @@
 
   function showLoading() {
     if (document.getElementById('op-ms-loading')) return;
-    // Find the page title — OpenProject renders it as an h2 or h1 with the
-    // page-header__title class, or a generic spot-header component.
-    const heading = document.querySelector(
-      '.op-time-tracking--title, .page-header__title, [data-test-selector="page-title"], h1, h2'
-    );
-    if (!heading) return;
     const indicator = document.createElement('span');
     indicator.id        = 'op-ms-loading';
     indicator.className = 'op-ms-loading';
     indicator.innerHTML =
       '<span class="op-ms-spinner"></span>' +
       '<span>Loading meeting suggestions…</span>';
-    heading.insertAdjacentElement('afterend', indicator);
+
+    const heading = [...document.querySelectorAll(
+      '.op-time-tracking--title, .page-header__title, [data-test-selector="page-title"], h1, h2'
+    )].find(el => !el.closest('[hidden]') && !el.classList.contains('sr-only') && el.offsetParent !== null);
+    if (heading) {
+      heading.appendChild(indicator);
+    } else {
+      // Fallback: fixed position in top-right corner
+      indicator.style.cssText = 'position:fixed;top:12px;right:16px;z-index:99998;background:#fff;padding:4px 10px;border-radius:6px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,0.1)';
+      document.body.appendChild(indicator);
+    }
   }
 
   function hideLoading() {
